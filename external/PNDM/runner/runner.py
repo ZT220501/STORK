@@ -209,8 +209,7 @@ class Runner(object):
             my_iter = range(total_num // n + 1)
 
         for _ in my_iter:
-            noise = th.randn(n, config['channels'], config['image_size'],
-                             config['image_size'], device=self.device)
+            noise = th.randn(n, config['channels'], config['image_size'], config['image_size'], device=self.device)
 
             if self.args.method == "ROCK4_ADAPTIVE_TIMESTEP":
                 # TODO: Try two different starting times for the adaptive time stepping\

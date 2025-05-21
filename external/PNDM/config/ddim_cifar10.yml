@@ -49,6 +49,7 @@ Sample:
   mpi4py: false
   batch_size: 1000
   last_only: True
-  total_num: 50000
+  total_num: 1000
+  seed: 0
 
 

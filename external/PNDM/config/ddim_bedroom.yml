@@ -50,6 +50,7 @@ Sample:
   batch_size: 50
   last_only: True
   total_num: 50000
+  seed: 0
 
 
 

@@ -178,26 +178,27 @@ def dpm_solver_3rd_order(img, t, t_next, model, betas, total_step):
 '''
 Coefficients of ROCK4
 '''
+from pathlib import Path
+current_file = Path(__file__)
+PARENTFOLDER = current_file.parent
 def coeff_rock4():
-
     # Degrees
-    data = loadmat('ms.mat')
+    data = loadmat('coefficients/ms.mat')
     ms = data['ms'][0]
 
     # Parameters for the finishing procedure
-    data = loadmat('fpa.mat')
+    data = loadmat('coefficients/fpa.mat')
     fpa = data['fpa']
 
-    data = loadmat('fpb.mat')
+    data = loadmat('coefficients/fpb.mat')
     fpb = data['fpb']
 
-    data = loadmat('fpbe.mat')
+    data = loadmat('coefficients/fpbe.mat')
     fpbe = data['fpbe']
 
     # Parameters for the recurrence procedure
-    data = loadmat('recf.mat')
+    data = loadmat('coefficients/recf.mat')
     recf = data['recf'][0]
-
 
     return ms, fpa, fpb, fpbe, recf
 

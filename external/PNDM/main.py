@@ -1,3 +1,5 @@
+# We borrowed the code from the PNDM codebase.
+
 # Copyright 2022 Luping Liu
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,22 +16,15 @@
 
 import argparse
 import yaml
-import sys
 import os
 import numpy as np
 import torch as th
-
 from runner.schedule import Schedule
 from runner.runner import Runner
 
 
-
-
-
-
 def args_and_config():
     parser = argparse.ArgumentParser()
-
     parser.add_argument("--runner", type=str, default='sample',
                         help="Choose the mode of runner")
     parser.add_argument("--config", type=str, default='ddim_cifar10.yml',
@@ -50,69 +45,35 @@ def args_and_config():
                         help="Restart a previous training process")
     parser.add_argument("--train_path", type=str, default='temp/train',
                         help="Choose the path to save training status")
-
-
     args = parser.parse_args()
-
     work_dir = os.getcwd()
     with open(f'{work_dir}/config/{args.config}', 'r') as f:
         config = yaml.safe_load(f)
-
     return args, config
-
-
-def check_config():
-    # image_size, total_step
-    pass
 
 
 if __name__ == "__main__":
     args, config = args_and_config()
-
-    if args.runner == 'sample' and config['Sample']['mpi4py']:
-        from mpi4py import MPI
-
-        comm = MPI.COMM_WORLD
-        mpi_rank = comm.Get_rank()
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(mpi_rank)
-
-    """forward_count = dict(count=0)
-    def NFE_hook(model, input, output):
-        forward_count['count'] += 1"""
-
+    seed = config['Sample']['seed']
+    # Seed randomness for reproducibility
+    np.random.seed(seed)
+    th.manual_seed(seed)
+    th.cuda.manual_seed(seed)
+    th.cuda.manual_seed_all(seed)
+    th.backends.cudnn.deterministic = True
+    th.backends.cudnn.benchmark = False
+    assert not config['Sample']['mpi4py'], "MPI4PY is not supported in our codebase"
     device = th.device(args.device)
     schedule = Schedule(args, config['Schedule'])
     if config['Model']['struc'] == 'DDIM':
         from model.ddim import Model
         model = Model(args, config['Model']).to(device)
-    elif config['Model']['struc'] == 'iDDPM':
-        from model.iDDPM.unet import UNetModel
-        model = UNetModel(args, config['Model']).to(device)
-    elif config['Model']['struc'] == 'PF':
-        from model.scoresde.ddpm import DDPM
-        model = DDPM(args, config['Model']).to(device)
-    elif config['Model']['struc'] == 'PF_deep':
-        from model.scoresde.ncsnpp import NCSNpp
-        model = NCSNpp(args, config['Model']).to(device)
     else:
         model = None
-        raise NotImplementedError("Model structure not implemented")
-    # Register the hook to the model
-    #hook_handle = model.register_forward_hook(NFE_hook)
-
-
+        raise NotImplementedError("Model structure not benchmarked yet")
     runner = Runner(args, config, schedule, model)
     if args.runner == 'train':
         runner.train()
     elif args.runner == 'sample':
         runner.sample_fid()
-    # Unregister the hook after training/sampling. Not really needed, but good practice.
-    #hook_handle.remove()
-    #print("Total NFE is " + str(forward_count['count']))
 
-
-
-# import torch
-# print(torch.cuda.is_available())
-# print(torch.__version__)
-# print(torch.version.cuda)

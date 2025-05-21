@@ -2,7 +2,7 @@
 # By default, 50k samples are drawn.
 METHOD="ROCK4" #This is STORK-4 for noise-predicting networks.
 #ATTENTION!!!
-EPS="1e-6" #we used 1e-3, 1e-4, 1e-5, 1e-6 in the paper
+EPS="1e-5" #we used 1e-3, 1e-4, 1e-5, 1e-6 in the paper
 INTRA_S=50
 CODE="final-tweedie"
 USE_TWEEDIE="True"
@@ -21,7 +21,7 @@ export INTRA_S
 export EPS
 export USE_TWEEDIE
 # Start the benchmarking loop
-for i in $(seq 8 10 98); do
+for i in $(seq 8 10 8); do
     sample_speed=$i
     OUTPUT="$BENCHMARK_ROOT/${METHOD}/${sample_speed}_${INTRA_S}_${EPS}_${CODE}"
     OUTPUT_SAMPLES=$OUTPUT/samples
