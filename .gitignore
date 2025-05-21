@@ -4,3 +4,4 @@ external/PNDM/runner/__pycache__
 external/PNDM/models/*
 external/PNDM/nips_data
 external/PNDM/nips_vis
+external/PNDM/vis_*

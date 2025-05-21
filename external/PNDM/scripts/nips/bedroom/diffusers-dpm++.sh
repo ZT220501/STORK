@@ -14,7 +14,7 @@ export CUDA_VISIBLE_DEVICES=0
 # Start the benchmarking loop
 for i in $(seq 10 10 50); do
     sample_speed=$i
-    OUTPUT="$BENCHMARK_ROOT/${METHOD}_${sample_speed}"
+    OUTPUT="$BENCHMARK_ROOT/${METHOD}/${sample_speed}"
     OUTPUT_SAMPLES=$OUTPUT/samples
     OUTPUT_STATS=$OUTPUT/inception_stats.npz
     mkdir -p "$OUTPUT";

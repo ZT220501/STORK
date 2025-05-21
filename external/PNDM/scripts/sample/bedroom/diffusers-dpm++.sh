@@ -1,9 +1,9 @@
 #!/bin/bash
 # By default, 50k samples are drawn.
-METHOD="PNDM"
-DATASET="cifar10"
+METHOD="DPM-Solver++"
+DATASET="bedroom"
 CONFIG="ddim_${DATASET}.yml"
-MODEL="models/ddim_$DATASET.ckpt"  
+MODEL="models/ddim_lsun_$DATASET.ckpt"  
 BENCHMARK_FOLDER="nips_vis"
 BENCHMARK_ROOT="${BENCHMARK_FOLDER}/${DATASET}"
 OUTPUT_FILE="${BENCHMARK_ROOT}/${METHOD}_benchmarks.txt"
@@ -12,7 +12,7 @@ STATS="inception_stats/fid_${DATASET}_train.npz"
 
 export CUDA_VISIBLE_DEVICES=0
 # Start the benchmarking loop
-for i in $(seq 11 10 91); do #For PNDM, NFE = step + 9. We start benchmarking from NFE=20
+for i in $(seq 10 10 50); do
     sample_speed=$i
     OUTPUT="$BENCHMARK_ROOT/${METHOD}/${sample_speed}"
     OUTPUT_SAMPLES=$OUTPUT/samples
