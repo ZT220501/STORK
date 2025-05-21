@@ -183,23 +183,18 @@ current_file = Path(__file__)
 PARENTFOLDER = current_file.parent
 def coeff_rock4():
     # Degrees
-    data = loadmat('coefficients/ms.mat')
+    data = loadmat(f'{PARENTFOLDER}/coefs/ms.mat')
     ms = data['ms'][0]
-
     # Parameters for the finishing procedure
-    data = loadmat('coefficients/fpa.mat')
+    data = loadmat(f'{PARENTFOLDER}/coefs/fpa.mat')
     fpa = data['fpa']
-
-    data = loadmat('coefficients/fpb.mat')
+    data = loadmat(f'{PARENTFOLDER}/coefs/fpb.mat')
     fpb = data['fpb']
-
-    data = loadmat('coefficients/fpbe.mat')
+    data = loadmat(f'{PARENTFOLDER}/coefs/fpbe.mat')
     fpbe = data['fpbe']
-
     # Parameters for the recurrence procedure
-    data = loadmat('coefficients/recf.mat')
+    data = loadmat(f'{PARENTFOLDER}/coefs/recf.mat')
     recf = data['recf'][0]
-
     return ms, fpa, fpb, fpbe, recf
 
 

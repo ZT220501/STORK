@@ -47,9 +47,9 @@ Optim:
 
 Sample:
   mpi4py: false
-  batch_size: 1000
+  batch_size: 32
   last_only: True
-  total_num: 1000
+  total_num: 32
   seed: 0
 
 

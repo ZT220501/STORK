@@ -62,6 +62,7 @@ if __name__ == "__main__":
     th.cuda.manual_seed_all(seed)
     th.backends.cudnn.deterministic = True
     th.backends.cudnn.benchmark = False
+    generator = th.Generator('cpu').manual_seed(seed)
     assert not config['Sample']['mpi4py'], "MPI4PY is not supported in our codebase"
     device = th.device(args.device)
     schedule = Schedule(args, config['Schedule'])
@@ -75,5 +76,5 @@ if __name__ == "__main__":
     if args.runner == 'train':
         runner.train()
     elif args.runner == 'sample':
-        runner.sample_fid()
+        runner.sample_fid(generator)
 

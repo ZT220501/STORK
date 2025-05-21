@@ -137,7 +137,7 @@ class Runner(object):
                     if ema is not None:
                         th.save(ema.state_dict(), os.path.join(self.args.train_path, 'ema.ckpt'))
 
-    def sample_fid(self):
+    def sample_fid(self, generator=None):
         config = self.config['Sample']
         mpi_rank = 0
         # if config['mpi4py']:
@@ -209,7 +209,10 @@ class Runner(object):
             my_iter = range(total_num // n + 1)
 
         for _ in my_iter:
-            noise = th.randn(n, config['channels'], config['image_size'], config['image_size'], device=self.device)
+            if generator is not None:
+                noise = th.randn(n, config['channels'], config['image_size'], config['image_size'], generator=generator).to(self.device)
+            else:
+                noise = th.randn(n, config['channels'], config['image_size'], config['image_size'], device=self.device)
 
             if self.args.method == "ROCK4_ADAPTIVE_TIMESTEP":
                 # TODO: Try two different starting times for the adaptive time stepping\

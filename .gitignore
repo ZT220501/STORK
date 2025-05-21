@@ -2,3 +2,5 @@ external/PNDM/dataset/__pycache__
 external/PNDM/model/__pycache__
 external/PNDM/runner/__pycache__
 external/PNDM/models/*
+external/PNDM/nips_data
+external/PNDM/nips_vis
