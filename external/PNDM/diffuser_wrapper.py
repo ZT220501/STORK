@@ -1,5 +1,5 @@
 from diffusers import DiffusionPipeline, PNDMScheduler, PNDMScheduler, \
-    DPMSolverMultistepScheduler, UniPCMultistepScheduler, DPMSolverSinglestepScheduler, DEISMultistepScheduler
+    DPMSolverMultistepScheduler, UniPCMultistepScheduler, DPMSolverSinglestepScheduler, DEISMultistepScheduler, DDIMScheduler
 #from runner.rock_diffusers_old import ROCKScheduler
 from runner.rock_diffuser_sorted import ROCKScheduler_sorted
 from model.ddim import Model
@@ -27,6 +27,8 @@ def build_scheduler(name, **kwargs):
         scheduler = ROCKScheduler_sorted(**kwargs)
     elif name == "DEIS":
         scheduler = DEISMultistepScheduler(**kwargs)
+    elif name == 'DDIM':
+        scheduler = DDIMScheduler(**kwargs)
     else:
         raise ValueError(f"Unknown scheduler: {name}")
     return scheduler
@@ -148,6 +150,11 @@ if __name__ == "__main__":
     elif args.method == "DEIS":
         scheduler_config = dict(
             beta_schedule = "linear", solver_order = 3, algorithm_type = "deis",
+        )
+        scheduler = build_scheduler(args.method, **scheduler_config)
+    elif args.method == "DDIM":
+        scheduler_config = dict(
+            beta_schedule = "linear"
         )
         scheduler = build_scheduler(args.method, **scheduler_config)
     else:
