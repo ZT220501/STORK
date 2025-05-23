@@ -2,6 +2,9 @@
   <img src="asset/logo.png" width="35%" alt="logo"/>
 </p>
 
+# STORK + Sana
+This subfolder benchmarks Sana on the MJHQ-30K dataset. Follow the original codebase/instruction to download the needed checkpoints and the dataset. You we provide `metrics.sh` and `metrics_1600M_1024.sh` for benchmarking.
+
 # ⚡️Sana: Efficient High-Resolution Image Synthesis with Linear Diffusion Transformer
 
 ### <div align="center"> ICLR 2025 Oral Presentation <div>

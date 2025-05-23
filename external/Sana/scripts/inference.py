@@ -49,17 +49,13 @@ from tools.download import find_model
 
 ### Out import
 from diffusion.scheduler.stork_pipeline import FlowSANAPipeline
+# Benchmarked
 from diffusion.scheduler.flow_rock4_2nd_v2 import FlowMatchROCKScheduler_2ndDerivative_v2
-from diffusion.scheduler.flow_rkl_v2 import FlowMatchRKLScheduler_2ndDerivative_v2
-#from diffusion.scheduler.flow_rkg_2nd_v1 import FlowMatchRKGScheduler_2ndDerivative
-from diffusion.scheduler.stork1_diffuser_flowmatching_1st_derivative import FlowMatchSTORK1Scheduler_1stDerivative
+from diffusion.scheduler.flow_rkg_2nd_v1 import FlowMatchRKGScheduler_2ndDerivative
+# Ablations
 from diffusion.scheduler.stork1_diffuser_flowmatching_2nd_derivative import FlowMatchSTORK1Scheduler_2ndDerivative
 from diffusion.scheduler.stork1_diffuser_flowmatching_3rd_derivative import FlowMatchSTORK1Scheduler_3rdDerivative
-from diffusion.scheduler.rock_diffuser_flowmatching_1st_derivative import FlowMatchROCKScheduler_1stDerivative
-from diffusion.scheduler.rock_diffuser_flowmatching_2nd_derivative import FlowMatchROCKScheduler_2ndDerivative
 from diffusion.scheduler.rock_diffuser_flowmatching_3rd_derivative import FlowMatchROCKScheduler_3rdDerivative
-from diffusion.scheduler.rkg_diffuser_flowmatching_1st_derivative import FlowMatchRKGScheduler_1stDerivative
-from diffusion.scheduler.rkg_diffuser_flowmatching_2nd_derivative import FlowMatchRKGScheduler_2ndDerivative
 from diffusion.scheduler.rkg_diffuser_flowmatching_3rd_derivative import FlowMatchRKGScheduler_3rdDerivative
 
 
@@ -117,15 +113,10 @@ def visualize(config, args, model, items, bs, sample_steps, cfg_scale, pag_scale
         raise ValueError(f"Unsupported mixed precision: {config.model.mixed_precision}")
     
     mapping = {
-            "flow_rkl-2": FlowMatchRKLScheduler_2ndDerivative_v2,
             "flow_rock4-2nd-2": FlowMatchROCKScheduler_2ndDerivative_v2,
-            "flow_stork1-1st": FlowMatchSTORK1Scheduler_1stDerivative,
             "flow_stork1-2nd": FlowMatchSTORK1Scheduler_2ndDerivative,
             "flow_stork1-3rd": FlowMatchSTORK1Scheduler_3rdDerivative,
-            "flow_rock-1st": FlowMatchROCKScheduler_1stDerivative,
-            "flow_rock-2nd": FlowMatchROCKScheduler_2ndDerivative_v2,
             "flow_rock-3rd": FlowMatchROCKScheduler_3rdDerivative,
-            "flow_rkg-1st": FlowMatchRKGScheduler_1stDerivative,
             "flow_rkg-2nd": FlowMatchRKGScheduler_2ndDerivative, #previously used diffusion.scheduler.flow_rkg_2nd_v1
             "flow_rkg-3rd": FlowMatchRKGScheduler_3rdDerivative,
     }
