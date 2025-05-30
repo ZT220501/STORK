@@ -1,6 +1,10 @@
 # STORK
 The implementation of STORK
 
+# TODO
+- [ ] Release a cleaner version of STORK-2 and STORK-4 for diffusion and flow-matching models
+- [ ] Integration with the Diffusers package.
+
 # Benchmarking CIFAR-10, LSUN-Bedroom, MS-COCO
 We based off the PNDM codebase. See `external/PNDM`
 
