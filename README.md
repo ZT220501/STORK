@@ -1,4 +1,4 @@
-# STORK
+# STORK: Improving the Fidelity of Mid-NFE Sampling for Diffusion and Flow Matching Models
 The official implementation for the paper [STORK: Improving the Fidelity of Mid-NFE Sampling for Diffusion and Flow Matching Models](https://arxiv.org/abs/2505.24210) by [Zheng Tan](https://zt220501.github.io/), [Weizhen Wang](https://weizhenwang-1210.github.io/), [Andrea L. Bertozzi](https://www.math.ucla.edu/~bertozzi/), and [Ernest K. Ryu](https://ernestryu.com/).
 
 --------------------
