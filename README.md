@@ -14,10 +14,10 @@ For the **not-diffusers** implementation, refer to `external` directory for samp
 # Using STORK from Diffusers
 We have released the experimental version in `STORKScheduler.py`. This is already compatible with stable diffusion 3. We are actively coordinating witht the Huggingface people for official integration. 
 
-# TODO
+<!-- # TODO
 - [x] Release a cleaner version of STORK-2 and STORK-4 for diffusion and flow-matching models.
 - [ ] Integration with the Diffusers package.
-- [ ] Sample Diffusers code.
+- [ ] Sample Diffusers code. -->
 
 # Reproduction of Reported Numbers
 
