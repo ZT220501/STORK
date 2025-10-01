@@ -13,6 +13,13 @@
 # limitations under the License.
 #
 # SPDX-License-Identifier: Apache-2.0
+
+import numpy as np
+# recreate the old aliases
+np.float_ = np.float64
+np.int_   = np.int64
+np.complex_ = np.complex128
+
 import argparse
 import json
 import os
@@ -49,16 +56,8 @@ from tools.download import find_model
 
 ### Out import
 from diffusion.scheduler.stork_pipeline import FlowSANAPipeline
-# Benchmarked
-from diffusion.scheduler.flow_rock4_2nd_v2 import FlowMatchROCKScheduler_2ndDerivative_v2
-from diffusion.scheduler.flow_rkg_2nd_v1 import FlowMatchRKGScheduler_2ndDerivative
-# Ablations
-from diffusion.scheduler.stork1_diffuser_flowmatching_2nd_derivative import FlowMatchSTORK1Scheduler_2ndDerivative
-from diffusion.scheduler.stork1_diffuser_flowmatching_3rd_derivative import FlowMatchSTORK1Scheduler_3rdDerivative
-from diffusion.scheduler.rock_diffuser_flowmatching_3rd_derivative import FlowMatchROCKScheduler_3rdDerivative
-from diffusion.scheduler.rkg_diffuser_flowmatching_3rd_derivative import FlowMatchRKGScheduler_3rdDerivative
-
-
+from STORKScheduler import STORKScheduler
+from diffusers import UniPCMultistepScheduler, FlowMatchHeunDiscreteScheduler
 
 
 #
@@ -104,37 +103,54 @@ def visualize(config, args, model, items, bs, sample_steps, cfg_scale, pag_scale
 
     generator = torch.Generator(device=device).manual_seed(args.seed)
     tqdm_desc = f"{save_root.split('/')[-1]} Using GPU: {args.gpu_id}: {args.start_index}-{args.end_index}"
-
-    if config.model.mixed_precision == "fp16":
-        precision = "float16"
-    elif config.model.mixed_precision == "fp32":
-        precision = "float32"
-    else:
-        raise ValueError(f"Unsupported mixed precision: {config.model.mixed_precision}")
     
-    mapping = {
-            "flow_rock4-2nd-2": FlowMatchROCKScheduler_2ndDerivative_v2,
-            "flow_stork1-2nd": FlowMatchSTORK1Scheduler_2ndDerivative,
-            "flow_stork1-3rd": FlowMatchSTORK1Scheduler_3rdDerivative,
-            "flow_rock-3rd": FlowMatchROCKScheduler_3rdDerivative,
-            "flow_rkg-2nd": FlowMatchRKGScheduler_2ndDerivative, #previously used diffusion.scheduler.flow_rkg_2nd_v1
-            "flow_rkg-3rd": FlowMatchRKGScheduler_3rdDerivative,
+    mapping = { 
+            "flow_STORK-4-1st": STORKScheduler,
+            "flow_STORK-4-2nd": STORKScheduler,
+            "flow_STORK-4-3rd": STORKScheduler,
+            "flow_STORK-2-1st": STORKScheduler,
+            "flow_STORK-2-2nd": STORKScheduler,
+            "flow_STORK-2-3rd": STORKScheduler,
+            "flow_STORK-1-1st": STORKScheduler,
+            "flow_STORK-1-2nd": STORKScheduler,
+            "flow_STORK-1-3rd": STORKScheduler,
+            "flow_Heun": FlowMatchHeunDiscreteScheduler,
+            "flow_UniPC": UniPCMultistepScheduler
     }
-    
-    def get_stork(name):
+    def get_scheduler(name):
         return mapping.get(name, None)
-        
-    
     
     our_methods = list(mapping.keys())
-    
-    s = int(os.getenv("INTRA_S", 100))
-    if get_stork(args.sampling_algo) is not None:
-        rock_scheduler = get_stork(args.sampling_algo)(shift=flow_shift, precision=precision, s=s)
-        rock_pipeline = FlowSANAPipeline(model=model, scheduler=rock_scheduler)
+    intra_s = int(os.getenv("INTRA_S", 100))
+    if get_scheduler(args.sampling_algo) is not None:
+        if args.sampling_algo == "flow_STORK-4-1st":
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(shift=flow_shift, prediction_type='flow_prediction', solver_order=4, s=intra_s, derivative_order=1)
+        elif args.sampling_algo == "flow_STORK-4-2nd":
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(shift=flow_shift, prediction_type='flow_prediction', solver_order=4, s=intra_s, derivative_order=2)
+        elif args.sampling_algo == "flow_STORK-4-3rd":
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(shift=flow_shift, prediction_type='flow_prediction', solver_order=4, s=intra_s, derivative_order=3)
+        elif args.sampling_algo == "flow_STORK-2-1st":
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(shift=flow_shift, prediction_type='flow_prediction', solver_order=2, s=intra_s, derivative_order=1)
+        elif args.sampling_algo == "flow_STORK-2-2nd":
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(shift=flow_shift, prediction_type='flow_prediction', solver_order=2, s=intra_s, derivative_order=2)
+        elif args.sampling_algo == "flow_STORK-2-3rd":
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(shift=flow_shift, prediction_type='flow_prediction', solver_order=2, s=intra_s, derivative_order=3)
+        elif args.sampling_algo == "flow_STORK-1-1st":
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(shift=flow_shift, prediction_type='flow_prediction', solver_order=1, s=intra_s, derivative_order=1)
+        elif args.sampling_algo == "flow_STORK-1-2nd":
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(shift=flow_shift, prediction_type='flow_prediction', solver_order=1, s=intra_s, derivative_order=2)
+        elif args.sampling_algo == "flow_STORK-1-3rd":
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(shift=flow_shift, prediction_type='flow_prediction', solver_order=1, s=intra_s, derivative_order=3)
+        elif args.sampling_algo == 'flow_Heun':
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(shift=flow_shift)
+        elif args.sampling_algo == "flow_UniPC":
+            diffusers_scheduler = get_scheduler(args.sampling_algo)(flow_shift=flow_shift, prediction_type='flow_prediction', use_flow_sigmas=True)
+        else:
+            raise ValueError(f"Unsupported sampling_algo: {args.sampling_algo}")
+        diffusers_pipeline = FlowSANAPipeline(model=model, scheduler=diffusers_scheduler)
     else:
-        rock_scheduler = None
-        rock_pipeline = None
+        diffusers_scheduler = None
+        diffusers_pipeline = None
     
 
     for chunk in tqdm(list(get_chunks(items, bs)), desc=tqdm_desc, unit="batch", position=args.gpu_id, leave=True):
@@ -260,8 +276,8 @@ def visualize(config, args, model, items, bs, sample_steps, cfg_scale, pag_scale
                     flow_shift=flow_shift,
                 )
             elif args.sampling_algo in our_methods:
-                assert rock_scheduler is not None and rock_pipeline is not None
-                samples = rock_pipeline(batch_size=n, 
+                assert diffusers_scheduler is not None and diffusers_pipeline is not None
+                samples = diffusers_pipeline(batch_size=n, 
                               num_inference_steps=sample_steps, 
                               channel=config.vae.vae_latent_dim,
                               height=latent_size_h, 
@@ -424,7 +440,7 @@ if __name__ == "__main__":
     os.makedirs(img_save_dir, exist_ok=True)
     logger.info(f"Sampler {args.sampling_algo}")
 
-    def create_save_root(args, dataset, epoch_name, step_name, sample_steps, guidance_type):
+    def create_save_root(args, dataset, epoch_name, step_name, sample_steps, guidance_type, intra_s=None):
         save_root = os.path.join(
             img_save_dir,
             # f"{datetime.now().date() if args.exist_time_prefix == '' else args.exist_time_prefix}_"
@@ -443,6 +459,10 @@ if __name__ == "__main__":
             save_root += f"_intervalguidance{args.interval_guidance[0]}{args.interval_guidance[1]}"
 
         save_root += f"_imgnums{args.sample_nums}" + args.add_label
+
+        # Note: When doing ablation study, change intra_s by adding back the following line
+        save_root += f"_intra{intra_s}" if intra_s is not None else ""
+        
         return save_root
 
     def guidance_type_select(default_guidance_type, pag_scale, attn_type):
@@ -452,6 +472,11 @@ if __name__ == "__main__":
             guidance_type = "classifier-free"
         return guidance_type
 
+
+    intra_s = int(os.getenv("INTRA_S", -1))
+    if intra_s == -1:
+        intra_s = None
+
     dataset = "MJHQ-30K" if args.json_file and "MJHQ-30K" in args.json_file else args.dataset
     if args.ablation_selections and args.ablation_key:
         for ablation_factor in args.ablation_selections:
@@ -459,8 +484,7 @@ if __name__ == "__main__":
             print(f"Setting {args.ablation_key}={eval(ablation_factor)}")
             sample_steps = args.step if args.step != -1 else sample_steps_dict[args.sampling_algo]
             guidance_type = guidance_type_select(guidance_type, args.pag_scale, config.model.attn_type)
-
-            save_root = create_save_root(args, dataset, epoch_name, step_name, sample_steps, guidance_type)
+            save_root = create_save_root(args, dataset, epoch_name, step_name, sample_steps, guidance_type, intra_s)
             os.makedirs(save_root, exist_ok=True)
             if args.if_save_dirname and args.gpu_id == 0:
                 os.makedirs(f"{work_dir}/metrics", exist_ok=True)
@@ -483,8 +507,7 @@ if __name__ == "__main__":
     else:
         guidance_type = guidance_type_select(guidance_type, args.pag_scale, config.model.attn_type)
         logger.info(f"Inference with {weight_dtype}, guidance_type: {guidance_type}, flow_shift: {flow_shift}")
-
-        save_root = create_save_root(args, dataset, epoch_name, step_name, sample_steps, guidance_type)
+        save_root = create_save_root(args, dataset, epoch_name, step_name, sample_steps, guidance_type, intra_s)
         os.makedirs(save_root, exist_ok=True)
         if args.if_save_dirname and args.gpu_id == 0:
             os.makedirs(f"{work_dir}/metrics", exist_ok=True)
