@@ -38,7 +38,7 @@ class STORKSchedulerOutput(BaseOutput):
 
 
 current_file = Path(__file__)
-CONSTANTSFOLDER = f"{current_file.parent}/stork_parameters"
+CONSTANTSFOLDER = f"{current_file.parent}/STORK_constants"
 
 
 
@@ -47,6 +47,7 @@ CONSTANTSFOLDER = f"{current_file.parent}/stork_parameters"
 class STORKScheduler(SchedulerMixin, ConfigMixin):
     """
     `STORKScheduler` uses modified stabilized Runge-Kutta method for the backward ODE in the diffusion or flow matching models.
+    This include the original STORK method and the modified STORK++ methods.
 
     This model inherits from [`SchedulerMixin`] and [`ConfigMixin`]. Check the superclass documentation for the generic
     methods the library implements for all schedulers such as loading and saving.
@@ -84,8 +85,8 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
             Prediction type of the scheduler function; can be `epsilon` (predicts the noise of the diffusion process) or `flow_prediction`.
         time_shift_type (`str`, defaults to "exponential"):
             The type of dynamic resolution-dependent timestep shifting to apply. Either "exponential" or "linear".
-        derivative_order (`int`, defaults to 2):
-            The order of the Taylor expansion derivative to use for the sub-step velocity approximation. Only supports 2 or 3.
+        derivative_order (`int`, defaults to 1):
+            The order of the Taylor expansion derivative to use for the sub-step velocity approximation. Only supports 1, 2 or 3.
         s (`int`, defaults to 50):
             The number of sub-steps to use in the STORK.
         precision (`str`, defaults to "float32"):
@@ -105,11 +106,11 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         beta_end: float = 0.02,
         beta_schedule: str = "linear",
         trained_betas: Optional[Union[np.ndarray, List[float]]] = None,
-        stopping_eps: float = 1e-3,
+        stopping_eps: float = 1e-2,
         solver_order: int = 4,
         prediction_type: str = "epsilon",
         time_shift_type: str = "exponential",
-        derivative_order: int = 2,
+        derivative_order: int = 1,
         s: int = 50,
         base_shift: Optional[float] = 0.5,
         max_shift: Optional[float] = 1.15,
@@ -120,7 +121,6 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         use_karras_sigmas: Optional[bool] = False,
         use_exponential_sigmas: Optional[bool] = False,
         use_beta_sigmas: Optional[bool] = False,
-        set_alpha_to_one: bool = False,
     ):
         
         super().__init__()
@@ -139,6 +139,7 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         timesteps = np.linspace(1, num_train_timesteps, num_train_timesteps, dtype=self.np_dtype)[::-1].copy()
         timesteps = torch.from_numpy(timesteps).to(dtype=self.dtype)
         sigmas = timesteps / num_train_timesteps
+
 
 
         if not use_dynamic_shifting:
@@ -161,6 +162,7 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         self.solver_order = solver_order
         self.prediction_type = prediction_type
 
+
         # Set the betas for noise-based models
         if trained_betas is not None:
             self.betas = torch.tensor(trained_betas, dtype=torch.float32)
@@ -172,10 +174,10 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         else:
             raise NotImplementedError(f"{beta_schedule} is not implemented for {self.__class__}")
         
+
         self.alphas = 1.0 - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
-
-        self.final_alpha_cumprod = torch.tensor(1.0) if set_alpha_to_one else self.alphas_cumprod[0]
+        
         # standard deviation of the initial noise distribution
         self.init_noise_sigma = 1.0
         
@@ -262,12 +264,9 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         seq = seq[:-1]
         seq = seq[::-1]
 
-        # Add the intermediate step between the first step and the second step
-        seq = np.insert(seq, 1, seq[1])
-        seq = np.insert(seq, 1, seq[0] + (seq[1] - seq[0]) / 2)
 
         # The following lines are for the uniform timestepping case
-        self.dt = (seq[0] - seq[1]) * 2
+        self.dt = seq[0] - seq[1]
         seq = seq * self.config.num_train_timesteps
         seq[-1] = self.stopping_eps * self.config.num_train_timesteps
         self._timesteps = seq
@@ -278,8 +277,6 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         self._begin_index = None
 
         self.noise_predictions = []
-
-
 
 
     def set_timesteps_flow_matching(self,
@@ -307,12 +304,14 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
                 Custom values for timesteps to be used for each diffusion step. If `None`, the timesteps are computed
                 automatically.
         """
+        self.num_inference_steps = num_inference_steps
+
         # 1. Prepare default sigmas
         is_timesteps_provided = timesteps is not None
 
         if is_timesteps_provided:
-            timesteps = np.array(timesteps).astype(self.np_dtype)
-        
+            timesteps = np.array(timesteps).astype(np.float32)
+
         if sigmas is None:
             if timesteps is None:
                 timesteps = np.linspace(
@@ -320,9 +319,8 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
                 )
             sigmas = timesteps / self.config.num_train_timesteps
         else:
-            sigmas = np.array(sigmas).astype(self.np_dtype)
+            sigmas = np.array(sigmas).astype(np.float32)
             num_inference_steps = len(sigmas)
-
 
         # 2. Perform timestep shifting. Either no shifting is applied, or resolution-dependent shifting of
         #    "exponential" or "linear" type is applied
@@ -344,11 +342,11 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
             sigmas = self._convert_to_beta(in_sigmas=sigmas, num_inference_steps=num_inference_steps)
 
         # 5. Convert sigmas and timesteps to tensors and move to specified device
-        sigmas = torch.from_numpy(sigmas).to(dtype=self.dtype, device=device)
+        sigmas = torch.from_numpy(sigmas).to(dtype=torch.float32, device=device)
         if not is_timesteps_provided:
             timesteps = sigmas * self.config.num_train_timesteps
         else:
-            timesteps = torch.from_numpy(timesteps).to(dtype=self.dtype, device=device)
+            timesteps = torch.from_numpy(timesteps).to(dtype=torch.float32, device=device)
 
         # 6. Append the terminal sigma value.
         #    If a model requires inverted sigma schedule for denoising but timesteps without inversion, the
@@ -360,31 +358,19 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         else:
             sigmas = torch.cat([sigmas, torch.zeros(1, device=sigmas.device)])
 
-        # Modify the timesteps to fit in STORK methods (Add the extra NFE)
-        self.timesteps = timesteps.tolist()
-        self.timesteps = np.insert(self.timesteps, 1, self.timesteps[0] + (self.timesteps[1] - self.timesteps[0]) / 2)
-        self.timesteps = torch.tensor(self.timesteps)
-        self.timesteps = self.timesteps.to(dtype=self.dtype, device=device)
+        self.timesteps = timesteps
+        self.sigmas = sigmas
 
-        # Modify the timesteps in order to become sigmas
-        self.sigmas = self.timesteps.tolist()
-        self.sigmas.append(0)
-        self.sigmas = torch.tensor(self.sigmas)
-        self.sigmas = self.sigmas.to(dtype=self.dtype, device=device)
-        self.sigmas = self.sigmas / self.config.num_train_timesteps
 
         # Create the dt list
         self.dt_list = self.sigmas[:-1] - self.sigmas[1:]
         self.dt_list = self.dt_list.reshape(-1)
 
-        # Modify the initial several dt so that they are convenient for derivative approximations
-        self.dt_list[0] = self.dt_list[0] * 2
-        self.dt_list[1] = self.dt_list[1] * 2
-
         self.dt_list = self.dt_list.tolist()
         self.dt_list = torch.tensor(self.dt_list).to(self.dtype)
 
         self.velocity_predictions = []
+
 
     @property
     def shift(self):
@@ -411,6 +397,16 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
 
     def set_shift(self, shift: float):
         self._shift = shift
+    
+    def set_begin_index(self, begin_index: int):
+        """
+        Set the begin index for the scheduler.
+
+        Args:
+            begin_index (`int`):
+                The begin index to set.
+        """
+        self._begin_index = begin_index
 
     def scale_noise(
         self,
@@ -463,6 +459,25 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
     def _sigma_to_t(self, sigma):
         return sigma * self.config.num_train_timesteps
     
+    def index_for_timestep(self, timestep, schedule_timesteps):
+        """
+        Get the index for a given timestep in the schedule.
+
+        Args:
+            timestep (`torch.Tensor`):
+                The timestep to find the index for.
+            schedule_timesteps (`torch.Tensor`):
+                The schedule timesteps.
+
+        Returns:
+            `int`:
+                The index for the timestep.
+        """
+        # Find the closest timestep in the schedule
+        indices = torch.searchsorted(schedule_timesteps, timestep, right=True)
+        indices = torch.clamp(indices, 0, len(schedule_timesteps) - 1)
+        return indices.item()
+    
 
 
     def step(
@@ -504,12 +519,14 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         if self.prediction_type == "epsilon":
             if self.solver_order == 2:
                 result = self.step_noise_2(model_output, timestep, sample, return_dict)
-            elif self.solver_order ==4:
+            elif self.solver_order == 4:
                 result = self.step_noise_4(model_output, timestep, sample, return_dict)
             else:
                 raise ValueError(f"Solver order {self.solver_order} is not yet supported for noise-based models")
         elif self.prediction_type == "flow_prediction":
-            if self.solver_order == 2:
+            if self.solver_order == 1:
+                result = self.step_flow_matching_1(model_output, timestep, sample, return_dict)
+            elif self.solver_order == 2:
                 result = self.step_flow_matching_2(model_output, timestep, sample, return_dict)
             elif self.solver_order == 4:
                 result = self.step_flow_matching_4(model_output, timestep, sample, return_dict)
@@ -525,6 +542,125 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
             result = (result[0].to(original_model_output_dtype),)
         return result
         
+
+    def step_flow_matching_1(
+        self,
+        model_output: torch.Tensor,
+        timestep: Union[int, torch.Tensor],
+        sample: torch.Tensor = None,
+        return_dict: bool = False
+    ) -> torch.Tensor:
+        # Initialize the step index if it's the first step
+        if self._step_index is None:
+            self._step_index = 0
+
+
+        # Compute the startup phase or the derivative approximation for the main step
+        if self._step_index == 0:
+            img_next = sample - model_output * self.dt_list[self._step_index]
+            self._step_index += 1
+            self.velocity_predictions.append(model_output)
+
+            if not return_dict:
+                return (img_next,)
+            return STORKSchedulerOutput(prev_sample=img_next)
+        else:
+            t = self.sigmas[self._step_index]
+            t_start = torch.ones(model_output.shape, device=sample.device) * t
+            t_next = self.sigmas[self._step_index + 1]
+            
+            h1 = self.dt_list[self._step_index-1]
+
+            if self.derivative_order == 1:
+                # Ensure h1 is a tensor for proper broadcasting
+                h1_tensor = torch.tensor(h1, device=model_output.device, dtype=model_output.dtype)
+                velocity_derivative = (self.velocity_predictions[-1] - model_output) / h1_tensor
+                velocity_second_derivative = None
+                velocity_third_derivative = None
+            elif self.derivative_order == 2:
+                # Ensure h1 and h2 are tensors for proper broadcasting
+                h1_tensor = torch.tensor(h1, device=model_output.device, dtype=model_output.dtype)
+                if self._step_index == 1:
+                    img_next = sample - 1.5 * model_output * self.dt_list[self._step_index] + 0.5 * self.velocity_predictions[-1] * self.dt_list[self._step_index-1]
+                    self._step_index += 1
+                    self.velocity_predictions.append(model_output)
+
+                    if not return_dict:
+                        return (img_next,)
+                    return STORKSchedulerOutput(prev_sample=img_next)
+                else:
+                    h2 = self.dt_list[self._step_index-2]
+                    h2_tensor = torch.tensor(h2, device=model_output.device, dtype=model_output.dtype)
+                    velocity_derivative = (-self.velocity_predictions[-2] + 4 * self.velocity_predictions[-1] - 3 * model_output) / (2 * h1_tensor)
+                    velocity_second_derivative = 2 / (h1_tensor * h2_tensor * (h1_tensor + h2_tensor)) * (self.velocity_predictions[-2] * h1_tensor - self.velocity_predictions[-1] * (h1_tensor + h2_tensor) + model_output * h2_tensor)
+                    velocity_third_derivative = None
+            elif self.derivative_order == 3:
+
+                if self._step_index == 1 or self._step_index == 2:
+                    img_next = sample - 1.5 * model_output * self.dt_list[self._step_index] + 0.5 * self.velocity_predictions[-1] * self.dt_list[self._step_index-1]
+                    self._step_index += 1
+                    self.velocity_predictions.append(model_output)
+
+                    if not return_dict:
+                        return (img_next,)
+                    return STORKSchedulerOutput(prev_sample=img_next)
+                else:
+                    h2 = h1 + self.dt_list[self._step_index-2]
+                    h3 = h2 + self.dt_list[self._step_index-3]
+                    # Ensure h1, h2, and h3 are tensors for proper broadcasting
+                    h1_tensor = torch.tensor(h1, device=model_output.device, dtype=model_output.dtype)
+                    h2_tensor = torch.tensor(h2, device=model_output.device, dtype=model_output.dtype)
+                    h3_tensor = torch.tensor(h3, device=model_output.device, dtype=model_output.dtype)
+                    velocity_derivative = ((h2_tensor * h3_tensor) * (self.velocity_predictions[-1] - model_output) - (h1_tensor * h3_tensor) * (self.velocity_predictions[-2] - model_output) + (h1_tensor * h2_tensor) * (self.velocity_predictions[-3] - model_output)) / (h1_tensor * h2_tensor * h3_tensor)
+                    velocity_second_derivative = 2 * ((h2_tensor + h3_tensor) * (self.velocity_predictions[-1] - model_output) - (h1_tensor + h3_tensor) * (self.velocity_predictions[-2] - model_output) + (h1_tensor + h2_tensor) * (self.velocity_predictions[-3] - model_output)) / (h1_tensor * h2_tensor * h3_tensor)
+                    velocity_third_derivative = 6 * ((h2_tensor - h3_tensor) * (self.velocity_predictions[-1] - model_output) + (h3_tensor - h1_tensor) * (self.velocity_predictions[-2] - model_output) + (h1_tensor - h2_tensor) * (self.velocity_predictions[-3] - model_output)) / (h1_tensor * h2_tensor * h3_tensor)
+            else:
+                print("The noise approximation order is not supported!")
+                exit()
+            
+            self.velocity_predictions.append(model_output)
+            self._step_index += 1
+
+
+
+        Y_j_2 = sample
+        Y_j_1 = sample
+        Y_j = sample
+
+        
+        # Implementation of our Runge-Kutta-Gegenbauer second order method
+        for j in range(1, self.s + 1):
+            # Calculate the corresponding \bar{alpha}_t and beta_t that aligns with the correct timestep
+            fraction = (j - 1) * (j + 2) / (self.s * (self.s + 3))
+            
+            if j == 1:
+                mu_tilde = 4 / (self.s * (self.s + 1))
+                dt = (t - t_next) * torch.ones(model_output.shape, device=sample.device)
+                Y_j = Y_j_1 - dt * mu_tilde * model_output
+            else:
+                mu = (2 * j + 1) * self.coeff_rock1(j) / (j * self.coeff_rock1(j - 1))
+                nu = -(j + 1) * self.coeff_rock1(j) / (j * self.coeff_rock1(j - 2))
+                mu_tilde = mu * 4 / (self.s * (self.s + 1))
+
+
+                # Probability flow ODE update
+                diff = -fraction * (t - t_next) * torch.ones(model_output.shape, device=sample.device)
+                velocity = self.taylor_approximation(self.derivative_order, diff, model_output, velocity_derivative, velocity_second_derivative, velocity_third_derivative)
+                Y_j = mu * Y_j_1 + nu * Y_j_2 - dt * mu_tilde * velocity
+                
+            Y_j_2 = Y_j_1
+            Y_j_1 = Y_j
+
+
+
+        img_next = Y_j
+        img_next = img_next.to(model_output.dtype)
+
+        return SchedulerOutput(prev_sample=img_next)
+    
+
+
+
     def step_flow_matching_2(
         self,
         model_output: torch.Tensor,
@@ -553,31 +689,66 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         if self._step_index is None:
             self._step_index = 0
 
-        # Upcast to avoid precision issues when computing prev_sample
-        sample = sample.to(self.dtype)
-        sample = sample.to(model_output.device)
 
         # Compute the startup phase or the derivative approximation for the main step
-        if self._step_index <= self.derivative_order:
-            return self.startup_phase_flow_matching(model_output, sample)
+        if self._step_index == 0:
+            img_next = sample - model_output * self.dt_list[self._step_index]
+            self._step_index += 1
+            self.velocity_predictions.append(model_output)
+
+            if not return_dict:
+                return (img_next,)
+            return STORKSchedulerOutput(prev_sample=img_next)
         else:
             t = self.sigmas[self._step_index]
+            t_start = torch.ones(model_output.shape, device=sample.device) * t
             t_next = self.sigmas[self._step_index + 1]
-
-
+            
             h1 = self.dt_list[self._step_index-1]
-            h2 = self.dt_list[self._step_index-2]
-            h3 = self.dt_list[self._step_index-3]
 
-
-            if self.derivative_order == 2:
-                velocity_derivative = (-self.velocity_predictions[-2] + 4 * self.velocity_predictions[-1] - 3 * model_output) / (2 * h1)
-                velocity_second_derivative = 2 / (h1 * h2 * (h1 + h2)) * (self.velocity_predictions[-2] * h1 - self.velocity_predictions[-1] * (h1 + h2) + model_output * h2)
+            if self.derivative_order == 1:
+                # Ensure h1 is a tensor for proper broadcasting
+                h1_tensor = torch.tensor(h1, device=model_output.device, dtype=model_output.dtype)
+                velocity_derivative = (self.velocity_predictions[-1] - model_output) / h1_tensor
+                velocity_second_derivative = None
                 velocity_third_derivative = None
+            elif self.derivative_order == 2:
+                # Ensure h1 and h2 are tensors for proper broadcasting
+                h1_tensor = torch.tensor(h1, device=model_output.device, dtype=model_output.dtype)
+                if self._step_index == 1:
+                    img_next = sample - 1.5 * model_output * self.dt_list[self._step_index] + 0.5 * self.velocity_predictions[-1] * self.dt_list[self._step_index-1]
+                    self._step_index += 1
+                    self.velocity_predictions.append(model_output)
+
+                    if not return_dict:
+                        return (img_next,)
+                    return STORKSchedulerOutput(prev_sample=img_next)
+                else:
+                    h2 = self.dt_list[self._step_index-2]
+                    h2_tensor = torch.tensor(h2, device=model_output.device, dtype=model_output.dtype)
+                    velocity_derivative = (-self.velocity_predictions[-2] + 4 * self.velocity_predictions[-1] - 3 * model_output) / (2 * h1_tensor)
+                    velocity_second_derivative = 2 / (h1_tensor * h2_tensor * (h1_tensor + h2_tensor)) * (self.velocity_predictions[-2] * h1_tensor - self.velocity_predictions[-1] * (h1_tensor + h2_tensor) + model_output * h2_tensor)
+                    velocity_third_derivative = None
             elif self.derivative_order == 3:
-                velocity_derivative = ((h2 * h3) * (self.velocity_predictions[-1] - model_output) - (h1 * h3) * (self.velocity_predictions[-2] - model_output) + (h1 * h2) * (self.velocity_predictions[-3] - model_output)) / (h1 * h2 * h3)
-                velocity_second_derivative = 2 * ((h2 + h3) * (self.velocity_predictions[-1] - model_output) - (h1 + h3) * (self.velocity_predictions[-2] - model_output) + (h1 + h2) * (self.velocity_predictions[-3] - model_output)) / (h1 * h2 * h3)
-                velocity_third_derivative = 6 * ((h2 - h3) * (self.velocity_predictions[-1] - model_output) + (h3 - h1) * (self.velocity_predictions[-2] - model_output) + (h1 - h2) * (self.velocity_predictions[-3] - model_output)) / (h1 * h2 * h3)
+
+                if self._step_index == 1 or self._step_index == 2:
+                    img_next = sample - 1.5 * model_output * self.dt_list[self._step_index] + 0.5 * self.velocity_predictions[-1] * self.dt_list[self._step_index-1]
+                    self._step_index += 1
+                    self.velocity_predictions.append(model_output)
+
+                    if not return_dict:
+                        return (img_next,)
+                    return STORKSchedulerOutput(prev_sample=img_next)
+                else:
+                    h2 = h1 + self.dt_list[self._step_index-2]
+                    h3 = h2 + self.dt_list[self._step_index-3]
+                    # Ensure h1, h2, and h3 are tensors for proper broadcasting
+                    h1_tensor = torch.tensor(h1, device=model_output.device, dtype=model_output.dtype)
+                    h2_tensor = torch.tensor(h2, device=model_output.device, dtype=model_output.dtype)
+                    h3_tensor = torch.tensor(h3, device=model_output.device, dtype=model_output.dtype)
+                    velocity_derivative = ((h2_tensor * h3_tensor) * (self.velocity_predictions[-1] - model_output) - (h1_tensor * h3_tensor) * (self.velocity_predictions[-2] - model_output) + (h1_tensor * h2_tensor) * (self.velocity_predictions[-3] - model_output)) / (h1_tensor * h2_tensor * h3_tensor)
+                    velocity_second_derivative = 2 * ((h2_tensor + h3_tensor) * (self.velocity_predictions[-1] - model_output) - (h1_tensor + h3_tensor) * (self.velocity_predictions[-2] - model_output) + (h1_tensor + h2_tensor) * (self.velocity_predictions[-3] - model_output)) / (h1_tensor * h2_tensor * h3_tensor)
+                    velocity_third_derivative = 6 * ((h2_tensor - h3_tensor) * (self.velocity_predictions[-1] - model_output) + (h3_tensor - h1_tensor) * (self.velocity_predictions[-2] - model_output) + (h1_tensor - h2_tensor) * (self.velocity_predictions[-3] - model_output)) / (h1_tensor * h2_tensor * h3_tensor)
             else:
                 print("The noise approximation order is not supported!")
                 exit()
@@ -649,42 +820,77 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
 
         Returns:
             `torch.FloatTensor`: The next sample in the diffusion chain.
-        '''
-        
+        '''        
         # Initialize the step index if it's the first step
         if self._step_index is None:
             self._step_index = 0
 
+
         # Compute the startup phase or the derivative approximation for the main step
-        if self._step_index <= self.derivative_order:
-            return self.startup_phase_flow_matching(model_output, sample, return_dict=return_dict)
+        if self._step_index == 0:
+            img_next = sample - model_output * self.dt_list[self._step_index]
+            self._step_index += 1
+            self.velocity_predictions.append(model_output)
+
+            if not return_dict:
+                return (img_next,)
+            return STORKSchedulerOutput(prev_sample=img_next)
         else:
             t = self.sigmas[self._step_index]
             t_start = torch.ones(model_output.shape, device=sample.device) * t
             t_next = self.sigmas[self._step_index + 1]
-
-
+            
             h1 = self.dt_list[self._step_index-1]
-            h2 = self.dt_list[self._step_index-2]
-            h3 = self.dt_list[self._step_index-3]
 
-
-            if self.derivative_order == 2:
-                velocity_derivative = (-self.velocity_predictions[-2] + 4 * self.velocity_predictions[-1] - 3 * model_output) / (2 * h1)
-                velocity_second_derivative = 2 / (h1 * h2 * (h1 + h2)) * (self.velocity_predictions[-2] * h1 - self.velocity_predictions[-1] * (h1 + h2) + model_output * h2)
+            if self.derivative_order == 1:
+                # Ensure h1 is a tensor for proper broadcasting
+                h1_tensor = torch.tensor(h1, device=model_output.device, dtype=model_output.dtype)
+                velocity_derivative = (self.velocity_predictions[-1] - model_output) / h1_tensor
+                velocity_second_derivative = None
                 velocity_third_derivative = None
+            elif self.derivative_order == 2:
+                # Ensure h1 and h2 are tensors for proper broadcasting
+                h1_tensor = torch.tensor(h1, device=model_output.device, dtype=model_output.dtype)
+                if self._step_index == 1:
+                    img_next = sample - 1.5 * model_output * self.dt_list[self._step_index] + 0.5 * self.velocity_predictions[-1] * self.dt_list[self._step_index-1]
+                    self._step_index += 1
+                    self.velocity_predictions.append(model_output)
+
+                    if not return_dict:
+                        return (img_next,)
+                    return STORKSchedulerOutput(prev_sample=img_next)
+                else:
+                    h2 = self.dt_list[self._step_index-2]
+                    h2_tensor = torch.tensor(h2, device=model_output.device, dtype=model_output.dtype)
+                    velocity_derivative = (-self.velocity_predictions[-2] + 4 * self.velocity_predictions[-1] - 3 * model_output) / (2 * h1_tensor)
+                    velocity_second_derivative = 2 / (h1_tensor * h2_tensor * (h1_tensor + h2_tensor)) * (self.velocity_predictions[-2] * h1_tensor - self.velocity_predictions[-1] * (h1_tensor + h2_tensor) + model_output * h2_tensor)
+                    velocity_third_derivative = None
             elif self.derivative_order == 3:
-                velocity_derivative = ((h2 * h3) * (self.velocity_predictions[-1] - model_output) - (h1 * h3) * (self.velocity_predictions[-2] - model_output) + (h1 * h2) * (self.velocity_predictions[-3] - model_output)) / (h1 * h2 * h3)
-                velocity_second_derivative = 2 * ((h2 + h3) * (self.velocity_predictions[-1] - model_output) - (h1 + h3) * (self.velocity_predictions[-2] - model_output) + (h1 + h2) * (self.velocity_predictions[-3] - model_output)) / (h1 * h2 * h3)
-                velocity_third_derivative = 6 * ((h2 - h3) * (self.velocity_predictions[-1] - model_output) + (h3 - h1) * (self.velocity_predictions[-2] - model_output) + (h1 - h2) * (self.velocity_predictions[-3] - model_output)) / (h1 * h2 * h3)
+
+                if self._step_index == 1 or self._step_index == 2:
+                    img_next = sample - 1.5 * model_output * self.dt_list[self._step_index] + 0.5 * self.velocity_predictions[-1] * self.dt_list[self._step_index-1]
+                    self._step_index += 1
+                    self.velocity_predictions.append(model_output)
+
+                    if not return_dict:
+                        return (img_next,)
+                    return STORKSchedulerOutput(prev_sample=img_next)
+                else:
+                    h2 = h1 + self.dt_list[self._step_index-2]
+                    h3 = h2 + self.dt_list[self._step_index-3]
+                    # Ensure h1, h2, and h3 are tensors for proper broadcasting
+                    h1_tensor = torch.tensor(h1, device=model_output.device, dtype=model_output.dtype)
+                    h2_tensor = torch.tensor(h2, device=model_output.device, dtype=model_output.dtype)
+                    h3_tensor = torch.tensor(h3, device=model_output.device, dtype=model_output.dtype)
+                    velocity_derivative = ((h2_tensor * h3_tensor) * (self.velocity_predictions[-1] - model_output) - (h1_tensor * h3_tensor) * (self.velocity_predictions[-2] - model_output) + (h1_tensor * h2_tensor) * (self.velocity_predictions[-3] - model_output)) / (h1_tensor * h2_tensor * h3_tensor)
+                    velocity_second_derivative = 2 * ((h2_tensor + h3_tensor) * (self.velocity_predictions[-1] - model_output) - (h1_tensor + h3_tensor) * (self.velocity_predictions[-2] - model_output) + (h1_tensor + h2_tensor) * (self.velocity_predictions[-3] - model_output)) / (h1_tensor * h2_tensor * h3_tensor)
+                    velocity_third_derivative = 6 * ((h2_tensor - h3_tensor) * (self.velocity_predictions[-1] - model_output) + (h3_tensor - h1_tensor) * (self.velocity_predictions[-2] - model_output) + (h1_tensor - h2_tensor) * (self.velocity_predictions[-3] - model_output)) / (h1_tensor * h2_tensor * h3_tensor)
             else:
                 print("The noise approximation order is not supported!")
                 exit()
             
             self.velocity_predictions.append(model_output)
             self._step_index += 1
-
-
 
         Y_j_2 = sample
         Y_j_1 = sample
@@ -695,13 +901,11 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         ci3 = t_start
 
         # Coefficients of ROCK4
-        ms, fpa, fpb, fpbe, recf = self.coeff_stork4()
+        ms, fpa, fpb, fpbe, recf = self.coeff_rock4()
         # Choose the degree that's in the precomputed table
         mdeg, mp = self.mdegr(self.s, ms)
         mz = int(mp[0])
         mr = int(mp[1])
-
-
 
         '''
         The first part of the STORK4 update
@@ -713,8 +917,8 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
                 temp1 = -(t - t_next) * recf[mr] * torch.ones(model_output.shape, device=sample.device)
                 ci1 = t_start + temp1
                 ci2 = ci1
-                Y_j_2 = sample
                 Y_j_1 = sample + temp1 * model_output
+                # Y_j = sample + temp1 * model_output
             # Second and the following sub-steps in the first part of the STORK4 update
             else:
                 diff = ci1 - t_start
@@ -761,7 +965,8 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         diff = ci2 - t_start
         velocity = self.taylor_approximation(self.derivative_order, diff, model_output, velocity_derivative, velocity_second_derivative, velocity_third_derivative)
         Y_j_3 = velocity
-        fnt = Y_j + temp1 * Y_j_1 + temp2 * Y_j_2 + temp3 * Y_j_3
+        # This is the counterpart of the final step in the noise-based diffusion models STORK4
+        # fnt = Y_j + temp1 * Y_j_1 + temp2 * Y_j_2 + temp3 * Y_j_3
 
         # Fourth finishing step
         ci2 = ci1 + temp1 + temp2 + temp3
@@ -875,8 +1080,6 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
             t = self.timesteps[0] / total_step
             t_start = torch.ones(model_output.shape, device=sample.device) * t
             t_next = self.timesteps[2] / total_step
-
-            noise_approx_order = 2
         elif self._step_index == 3:
             h = 0.5 * dt
 
@@ -885,7 +1088,6 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
             noise_third_derivative = None
 
             self.noise_predictions.append(noise_initial)
-            noise_approx_order = 2
         elif self._step_index == 4:
             h = dt
 
@@ -894,7 +1096,6 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
             noise_third_derivative = None
             
             self.noise_predictions.append(noise_initial)
-            noise_approx_order = 2
         else:
             # ALL ELSE
             h = dt
@@ -904,16 +1105,11 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
             noise_third_derivative = (self.noise_predictions[-3] - 3 * self.noise_predictions[-2] + 3 * self.noise_predictions[-1] - noise_initial) / (h**3)
 
             self.noise_predictions.append(noise_initial)
-            noise_approx_order = 3
 
 
         Y_j_2 = sample
         Y_j_1 = sample
         Y_j = sample
-
-        ci1 = t_start
-        ci2 = t_start
-        ci3 = t_start
 
         # Implementation of our Runge-Kutta-Gegenbauer second order method
         for j in range(1, self.s + 1):
@@ -977,6 +1173,9 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         Returns:
             `torch.FloatTensor`: The next sample in the diffusion chain.
         '''
+
+
+
         # Initialize the step index if it's the first step
         if self._step_index is None:
             self._step_index = 0
@@ -1011,74 +1210,71 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
 
         dt = torch.ones(model_output.shape, device=sample.device) * self.dt
 
-        if self._step_index == 0:
-            # FIRST RUN
-            self.initial_sample = sample
-            img_next = sample - 0.5 * dt * drift_initial
 
-            self.noise_predictions.append(noise_initial)
-            self._step_index += 1
+        if self.derivative_order == 2:
+            if self._step_index == 0:
+                # Initial Euler update
+                self.initial_sample = sample
+                img_next = sample - dt * drift_initial
 
-            self.initial_sample = sample
-            self.initial_drift = drift_initial
-            self.initial_noise = model_output
+                self.noise_predictions.append(noise_initial)
+                self._step_index += 1
 
-            return SchedulerOutput(prev_sample=img_next)
-        elif self._step_index == 1:
-            # SECOND RUN
-            t_previous = torch.ones(model_output.shape, device=sample.device) * self.timesteps[0] / 1000
-            drift_previous = self.drift_function(self.betas, self.config.num_train_timesteps, t_previous, self.initial_sample, self.noise_predictions[-1])
+                self.initial_drift = drift_initial
+                
+                if not return_dict:
+                    return (img_next,)
+                return SchedulerOutput(prev_sample=img_next)
+            elif self._step_index == 1:
+                # Initial 2-step Adams-Bashforth update
+                drift_previous = self.initial_drift
 
-            img_next = sample - 0.75 * dt * drift_initial + 0.25 * dt * drift_previous
+                img_next = sample - 1.5 * dt * drift_initial + 0.5 * dt * drift_previous
 
-            self.noise_predictions.append(noise_initial)
-            self._step_index += 1
+                self.noise_predictions.append(noise_initial)
+                self._step_index += 1
 
-            return SchedulerOutput(prev_sample=img_next)
-        elif self._step_index == 2:
-            h = 0.5 * dt
-    
-            noise_derivative = (3 * self.noise_predictions[0] - 4 * self.noise_predictions[1] + model_output) / (2 * h)
-            noise_second_derivative = (self.noise_predictions[0] - 2 * self.noise_predictions[1] + model_output) / (h ** 2)
-            noise_third_derivative = None
+                if not return_dict:
+                    return (img_next,)
+                return SchedulerOutput(prev_sample=img_next)
+            else:
+                # STORK4 update
+                h = dt
 
-            model_output = self.initial_noise
-            drift_initial = self.initial_drift
-            sample = self.initial_sample
+                # The first derivative is calculated using the three point approximation, 
+                # and the second derivative is calculated using the standardtwo point approximation.
+                noise_derivative = (-self.noise_predictions[-2] + 4 * self.noise_predictions[-1] - 3 * noise_initial) / (2 * h)
+                noise_second_derivative = (self.noise_predictions[-2] - 2 * self.noise_predictions[-1] + noise_initial) / h**2
+                noise_third_derivative = None
 
-            t = self.timesteps[0] / total_step
-            t_start = torch.ones(model_output.shape, device=sample.device) * t
-            t_next = self.timesteps[2] / total_step
+                self.noise_predictions.append(noise_initial)
+                noise_approx_order = 2
+        elif self.derivative_order == 1:
+            if self._step_index == 0:
+                # Initial Euler update
+                self.initial_sample = sample
+                img_next = sample - dt * drift_initial
 
-            noise_approx_order = 2
-        elif self._step_index == 3:
-            h = 0.5 * dt
+                self.noise_predictions.append(noise_initial)
+                self._step_index += 1
 
-            noise_derivative = (-3 * noise_initial + 4 * self.noise_predictions[-1] - self.noise_predictions[-2]) / (2 * h)
-            noise_second_derivative = (noise_initial - 2 * self.noise_predictions[-1] + self.noise_predictions[-2]) / (h ** 2)
-            noise_third_derivative = None
+                self.initial_drift = drift_initial
+                
+                if not return_dict:
+                    return (img_next,)
+                return SchedulerOutput(prev_sample=img_next)
+            else:
+                # STORK4 update
+                h = dt
 
-            self.noise_predictions.append(noise_initial)
-            noise_approx_order = 2
-        elif self._step_index == 4:
-            h = dt
+                noise_derivative = (self.noise_predictions[-1] - noise_initial) / h
+                noise_second_derivative = None
+                noise_third_derivative = None
 
-            noise_derivative = (-3 * noise_initial + 4 * self.noise_predictions[-1] - self.noise_predictions[-2]) / (2 * h)
-            noise_second_derivative = (noise_initial - 2 * self.noise_predictions[-1] + self.noise_predictions[-2]) / (h ** 2)
-            noise_third_derivative = None
-            
-            self.noise_predictions.append(noise_initial)
-            noise_approx_order = 2
+                self.noise_predictions.append(noise_initial)
+                noise_approx_order = 1
         else:
-            # ALL ELSE
-            h = dt
-            
-            noise_derivative = (2 * self.noise_predictions[-3] - 9 * self.noise_predictions[-2] + 18 * self.noise_predictions[-1] - 11 * noise_initial) / (6 * h)
-            noise_second_derivative = (-self.noise_predictions[-3] + 4 * self.noise_predictions[-2] -5 * self.noise_predictions[-1] + 2 * noise_initial) / (h**2)
-            noise_third_derivative = (self.noise_predictions[-3] - 3 * self.noise_predictions[-2] + 3 * self.noise_predictions[-1] - noise_initial) / (h**3)
-
-            self.noise_predictions.append(noise_initial)
-            noise_approx_order = 3
+            raise ValueError(f"Unknown derivative order: {self.derivative_order}")
 
 
         Y_j_2 = sample
@@ -1090,7 +1286,7 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         ci3 = t_start
 
         # Coefficients of ROCK4
-        ms, fpa, fpb, fpbe, recf = self.coeff_stork4()
+        ms, fpa, fpb, fpbe, recf = self.coeff_rock4()
         # Choose the degree that's in the precomputed table
         mdeg, mp = self.mdegr(self.s, ms)
         mz = int(mp[0])
@@ -1106,8 +1302,11 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
                 temp1 = -(t - t_next) * recf[mr] * torch.ones(model_output.shape, device=sample.device)
                 ci1 = t_start + temp1
                 ci2 = ci1
-                Y_j_2 = sample
-                Y_j_1 = sample + temp1 * drift_initial
+                Y_j_1 = sample + temp1 * model_output #subver
+                
+                # drift_approx = self.drift_function(self.betas, self.config.num_train_timesteps, t_start, Y_j, model_output)
+                # Y_j_1 = sample + temp1 * drift_approx
+                
             # Second and the following sub-steps in the first part of the STORK4 update
             else:
                 diff = ci1 - t_start
@@ -1180,108 +1379,6 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         if not return_dict:
             return (img_next,)
         return STORKSchedulerOutput(prev_sample=img_next)
-    
-
-    
-
-
-    def startup_phase_flow_matching(
-        self,
-        model_output: torch.Tensor,
-        sample: torch.Tensor = None,
-        return_dict: bool = True,
-    ) -> torch.Tensor:
-        '''
-        Startup phase for the STORK2 and STORK4 update for flow matching based models.
-
-        Args:
-            model_output (`torch.FloatTensor`):
-                The direct output from learned flow matching model.
-            sample (`torch.FloatTensor`):
-                A current instance of a sample created by the flow matching process.
-            return_dict (`bool`, defaults to `True`):
-                Whether or not to return a [`~schedulers.STORKSchedulerOutput`] instead of a plain tuple.
-
-        Returns:
-            result (Union[Tuple, STORKSchedulerOutput]):
-                The next sample in the diffusion chain, either as a tuple or as a [`~schedulers.STORKSchedulerOutput`]. The value is converted back to the original dtype of `model_output` to avoid numerical issues.
-        '''
-        dt = self.dt_list[self._step_index]
-        dt = torch.ones(model_output.shape, device=sample.device) * dt
-        
-        if self._step_index == 0:
-            # Perfrom Euler's method for a half step
-            img_next = sample - 0.5 * dt * model_output
-            self.velocity_predictions.append(model_output)  
-        elif self._step_index == 1:
-            # Perfrom Heun's method for a half step
-            img_next = sample - 0.75 * dt * model_output + 0.25 * dt * self.velocity_predictions[-1]
-        elif self._step_index == 2 or (self._step_index == 3 and self.derivative_order == 3):
-            dt_previous = self.dt_list[self._step_index-1]
-            dt_previous = torch.ones(model_output.shape, device=sample.device) * dt_previous
-            img_next = sample + (dt**2 / (2 * (-dt_previous)) - dt) * model_output + (dt**2 / (2 * dt_previous)) * self.velocity_predictions[-1]
-            self.velocity_predictions.append(model_output)
-        else:
-            raise NotImplementedError(
-                f"Startup phase for step {self._step_index} is not implemented. Please check the implementation."
-            )
-            
-        self._step_index += 1
-        
-        if not return_dict:
-            return (img_next,)
-        return STORKSchedulerOutput(prev_sample=img_next)
-
-    def startup_phase_noise(
-        self,
-        model_output: torch.Tensor,
-        drift: torch.Tensor,
-        sample: torch.Tensor = None,
-        return_dict: bool = False,
-    ) -> torch.Tensor:        
-        '''
-        Startup phase for the STORK2 and STORK4 update for noise-based diffusion models.
-
-        Args:
-            model_output (`torch.FloatTensor`):
-                The direct output from learned diffusion model.
-            drift (`torch.FloatTensor`):
-                The drift term from the diffusion model, calculated based on the model_output and the current timestep.
-            sample (`torch.FloatTensor`):
-                A current instance of a sample created by the diffusion process.
-            return_dict (`bool`, defaults to `True`):
-                Whether or not to return a [`~schedulers.STORKSchedulerOutput`] instead of a plain tuple.
-
-        Returns:
-            result (Union[Tuple, STORKSchedulerOutput]):
-                The next sample in the diffusion chain, either as a tuple or as a [`~schedulers.STORKSchedulerOutput`]. The value is converted back to the original dtype of `model_output` to avoid numerical issues.
-        '''
-        dt = torch.ones(model_output.shape, device=sample.device) * self.dt
-        if self._step_index == 0:
-            # Perfrom Euler's method for a half step
-            self.initial_sample = sample
-            self.initial_drift = drift
-
-            img_next = sample - 0.5 * dt * drift
-
-            self.noise_predictions.append(model_output)
-            self._step_index += 1
-
-            if not return_dict:
-                return (img_next,)
-            return STORKSchedulerOutput(prev_sample=img_next)
-        elif self._step_index == 1:
-            # Perfrom Heun's method for a half step
-            img_next = sample - 0.75 * dt * drift + 0.25 * dt * self.initial_drift
-
-            self.noise_predictions.append(model_output)
-            self._step_index += 1
-
-            if not return_dict:
-                return (img_next,)
-            return STORKSchedulerOutput(prev_sample=img_next)
-        else:
-            raise ValueError("Startup phase is only supported for the first two steps.")
         
 
 
@@ -1304,6 +1401,82 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         """
         return sample
     
+    def add_noise(
+        self,
+        original_samples: torch.FloatTensor,
+        noise: torch.FloatTensor,
+        timesteps: torch.IntTensor,
+    ) -> torch.FloatTensor:
+        """
+        Add noise to the original samples according to the noise magnitude at the given timestep.
+
+        Args:
+            original_samples (`torch.FloatTensor`):
+                The original samples.
+            noise (`torch.FloatTensor`):
+                The noise to add.
+            timesteps (`torch.IntTensor`):
+                The timesteps for which to add noise.
+
+        Returns:
+            `torch.FloatTensor`:
+                The noisy samples.
+        """
+        # Make sure alphas_cumprod and timestep have same device and dtype as original_samples
+        alphas_cumprod = self.alphas_cumprod.to(device=original_samples.device, dtype=original_samples.dtype)
+        timesteps = timesteps.to(original_samples.device)
+
+        sqrt_alpha_prod = alphas_cumprod[timesteps] ** 0.5
+        sqrt_alpha_prod = sqrt_alpha_prod.flatten()
+        while len(sqrt_alpha_prod.shape) < len(original_samples.shape):
+            sqrt_alpha_prod = sqrt_alpha_prod.unsqueeze(-1)
+
+        sqrt_one_minus_alpha_prod = (1 - alphas_cumprod[timesteps]) ** 0.5
+        sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.flatten()
+        while len(sqrt_one_minus_alpha_prod.shape) < len(original_samples.shape):
+            sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.unsqueeze(-1)
+
+        noisy_samples = sqrt_alpha_prod * original_samples + sqrt_one_minus_alpha_prod * noise
+        return noisy_samples
+    
+    def get_velocity(
+        self,
+        sample: torch.FloatTensor,
+        noise: torch.FloatTensor,
+        timesteps: torch.IntTensor,
+    ) -> torch.FloatTensor:
+        """
+        Get the velocity (score) for the given sample, noise, and timesteps.
+
+        Args:
+            sample (`torch.FloatTensor`):
+                The sample.
+            noise (`torch.FloatTensor`):
+                The noise.
+            timesteps (`torch.IntTensor`):
+                The timesteps.
+
+        Returns:
+            `torch.FloatTensor`:
+                The velocity.
+        """
+        # Make sure alphas_cumprod and timestep have same device and dtype as sample
+        alphas_cumprod = self.alphas_cumprod.to(device=sample.device, dtype=sample.dtype)
+        timesteps = timesteps.to(sample.device)
+
+        sqrt_alpha_prod = alphas_cumprod[timesteps] ** 0.5
+        sqrt_alpha_prod = sqrt_alpha_prod.flatten()
+        while len(sqrt_alpha_prod.shape) < len(sample.shape):
+            sqrt_alpha_prod = sqrt_alpha_prod.unsqueeze(-1)
+
+        sqrt_one_minus_alpha_prod = (1 - alphas_cumprod[timesteps]) ** 0.5
+        sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.flatten()
+        while len(sqrt_one_minus_alpha_prod.shape) < len(sample.shape):
+            sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.unsqueeze(-1)
+
+        velocity = sqrt_alpha_prod * noise - sqrt_one_minus_alpha_prod * sample
+        return velocity
+    
     def time_shift(self, mu: float, sigma: float, t: torch.Tensor):
         if self.config.time_shift_type == "exponential":
             return self._time_shift_exponential(mu, sigma, t)
@@ -1317,7 +1490,9 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         return mu / (mu + (1 / t - 1) ** sigma)
     
     def taylor_approximation(self, taylor_approx_order, diff, model_output, derivative, second_derivative, third_derivative=None):
-        if taylor_approx_order == 2:
+        if taylor_approx_order == 1:
+            approx_value = model_output + diff * derivative
+        elif taylor_approx_order == 2:
             if third_derivative is not None:
                 raise ValueError("The third derivative is computed but not used!")
             approx_value = model_output + diff * derivative + 0.5 * diff**2 * second_derivative
@@ -1390,7 +1565,12 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
         
         return 4 * (j - 1) * (j + 4) / (3 * j * (j + 1) * (j + 2) * (j + 3))
 
-    def coeff_stork4(self):
+    def coeff_rock1(self, j):
+        if j < 0:
+            print("The b_j coefficient in the RKG method can't have j negative")
+        return 2 / ((j + 1) * (j + 2))
+
+    def coeff_rock4(self):
         '''
         Load pre-computed coefficients of STORK4. The are based on the fourth order orthogonal Runge-Kutta-Chebyshev (ROCK4) method.
         Details of the coefficients can be found in https://epubs.siam.org/doi/abs/10.1137/S1064827500379549.
@@ -1459,20 +1639,3 @@ class STORKScheduler(SchedulerMixin, ConfigMixin):
                 mp[1] = mp[1] + ms[i] * 2 - 1
 
         return mdeg, mp
-    
-
-    
-    def scale_model_input(self, sample: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        """
-        Ensures interchangeability with schedulers that need to scale the denoising model input depending on the
-        current timestep.
-
-        Args:
-            sample (`torch.Tensor`):
-                The input sample.
-
-        Returns:
-            `torch.Tensor`:
-                A scaled input sample.
-        """
-        return sample
