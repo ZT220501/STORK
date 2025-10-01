@@ -51,7 +51,6 @@ def load_jobs(job_path, save_folder, overwrite=True):
 
 def load_jobs_hpsv2(job_path):
     styles = ['anime', 'concept-art', 'paintings', 'photo']
-
     res = {}
     for sty in styles:
         with open(f"{job_path}/{sty}.json") as f:
