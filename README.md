@@ -3,7 +3,7 @@ The official implementation for the paper [STORK: Improving the Fidelity of Mid-
 
 --------------------
 
-STORK is a **training-free** **structurally independent** ODE solver for high-fidelity generation within popular NFEs, applicable to both **diffusion** and **flow-matching** models. Experiments show that STORK excels in generation quality starting around 20 NFEs and consistently outperforms the SoTA ODE solvers on various datasets.
+STORK is a **training-free** **structurally independent** ODE solver for high-fidelity generation within popular NFEs, applicable to both **diffusion** and **flow-matching** models. Experiments show that STORK excels in generation quality and outperforms the SoTA ODE solvers on various datasets, models, and scales.
 
 [SANA](https://arxiv.org/abs/2410.10629) with STORK:
 ![STORK_teaser](assets/stork_teaser.png)
