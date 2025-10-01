@@ -1,6 +1,10 @@
 # Generic Ignores
 **/__pycache__/
 
+
+# vscode settings
+.vscode/*
+
 # PNDM Ignores
 external/PNDM/models/*
 external/PNDM/nips_data
