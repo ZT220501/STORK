@@ -1,5 +1,5 @@
-# STORK: Improving the Fidelity of Mid-NFE Sampling for Diffusion and Flow Matching Models
-The official implementation for the paper [STORK: Improving the Fidelity of Mid-NFE Sampling for Diffusion and Flow Matching Models](https://arxiv.org/abs/2505.24210) by [Zheng Tan](https://zt220501.github.io/), [Weizhen Wang](https://weizhenwang-1210.github.io/), [Andrea L. Bertozzi](https://www.math.ucla.edu/~bertozzi/), and [Ernest K. Ryu](https://ernestryu.com/).
+# STORK: Faster Diffusion And Flow Matching Sampling By Resolving Both Stiffness And Structure-Dependence
+The official implementation for the paper [STORK: Faster Diffusion And Flow Matching Sampling By Resolving Both Stiffness And Structure-Dependence](https://arxiv.org/abs/2505.24210) by [Zheng Tan](https://zt220501.github.io/), [Weizhen Wang](https://weizhenwang-1210.github.io/), [Andrea L. Bertozzi](https://www.math.ucla.edu/~bertozzi/), and [Ernest K. Ryu](https://ernestryu.com/).
 
 --------------------
 
@@ -32,8 +32,8 @@ We based off the DPM-Solver codebase. See `external/Sana`
 # Citation
 If you find our work useful, please cite 
 ```bib
-@misc{tan2025storkimprovingfidelitymidnfe,
-      title={STORK: Improving the Fidelity of Mid-NFE Sampling for Diffusion and Flow Matching Models}, 
+@misc{tan2025storkfasterdiffusionflow,
+      title={STORK: Faster Diffusion And Flow Matching Sampling By Resolving Both Stiffness And Structure-Dependence}, 
       author={Zheng Tan and Weizhen Wang and Andrea L. Bertozzi and Ernest K. Ryu},
       year={2025},
       eprint={2505.24210},
